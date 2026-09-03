@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>mint-sanity</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>mint-sanity</h1>
+    <p class="lede">Paste a Solana token mint. This page reads DexScreener’s public pair data and prints a few numbers — not a verdict.</p>
+    <p class="why">Why this exists: most “is this mint real?” checks dump you into a chart, a wallet connect, or a thread of screenshots. This is a one-field lookup so you can see a name, a symbol, and whether any pool has reported liquidity, then close the tab. It is not research, not a score, and not advice to buy, sell, or hold.</p>
+    <form id="form">
+      <label for="mint">Solana mint address</label>
+      <div class="row">
+        <input id="mint" name="mint" autocomplete="off" spellcheck="false" placeholder="So11111111111111111111111111111111111111112" required>
+        <button type="submit">Look up</button>
+      </div>
+    </form>
+    <p id="status" hidden></p>
+    <section id="card" hidden></section>
+    <p class="sales">A written custom report for one mint (pair list, timestamps, sources cited) is $5. Open a GitHub issue at <a href="https://github.com/louist369/mint-sanity/issues/new">louist369/mint-sanity</a> and we will settle payment there. No checkout on this page.</p>
+  </main>
+  <script>
+    const form = document.getElementById('form');
+    const input = document.getElementById('mint');
+    const status = document.getElementById('status');
+    const card = document.getElementById('card');
+    const BASE58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+    const THIN = 10000;
+    const esc = (s) => String(s ?? '—').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const money = (n) => (n == null || Number.isNaN(Number(n))) ? '—' : new Intl.NumberFormat('en-US', {style:'currency', currency:'USD', maximumFractionDigits:0}).format(n);
+    const when = (ms) => ms ? new Date(ms).toISOString().replace('T',' ').slice(0,16) + ' UTC' : '—';
+    const tagFor = (usd) => (usd == null || Number.isNaN(Number(usd))) ? 'unknown' : (usd < THIN ? 'thin' : 'ok');
+    function showStatus(text, kind) {
+      card.hidden = true;
+      status.hidden = false;
+      status.className = kind || '';
+      status.textContent = text;
+    }
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const mint = input.value.trim();
+      if (!BASE58.test(mint)) return showStatus('That does not look like a Solana mint (base58, 32–44 chars).', 'err');
+      showStatus('Fetching DexScreener…', 'load');
+      try {
+        const res = await fetch('https://api.dexscreener.com/latest/dex/tokens/' + encodeURIComponent(mint));
+        if (!res.ok) throw new Error('http');
+        const data = await res.json();
+        const all = data.pairs || [];
+        const list = all.filter((p) => p.chainId === 'solana');
+        const pairs = list.length ? list : all;
+        if (!pairs.length) return showStatus('No pairs on DexScreener for this mint. Tag: unknown.', 'empty');
+        pairs.sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0));
+        const p = pairs[0];
+        const token = p.baseToken?.address === mint ? p.baseToken : (p.quoteToken?.address === mint ? p.quoteToken : p.baseToken);
+        const liq = p.liquidity?.usd;
+        const t = tagFor(liq);
+        status.hidden = true;
+        card.hidden = false;
+        card.innerHTML = '<h2>' + esc(token?.name) + ' <small>' + esc(token?.symbol) + '</small></h2>' +
+          '<p><span class="tag ' + t + '">' + t + '</span> liquidity snapshot only — not advice.</p>' +
+          '<dl><dt>Liquidity USD</dt><dd>' + money(liq) + '</dd>' +
+          '<dt>24h volume</dt><dd>' + money(p.volume?.h24) + '</dd>' +
+          '<dt>Pair created</dt><dd>' + esc(when(p.pairCreatedAt)) + '</dd></dl>';
+      } catch {
+        showStatus('Could not reach DexScreener. Try again in a moment.', 'err');
+      }
+    });
+  </script>
+</body>
+</html>
