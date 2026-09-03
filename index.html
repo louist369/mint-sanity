@@ -4,6 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>mint-sanity</title>
+  <meta name="description" content="Look up a Solana mint on DexScreener: pair stats and a thin / ok / unknown liquidity tag. Not a verdict.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="mint-sanity">
+  <meta property="og:description" content="Look up a Solana mint on DexScreener: pair stats and a thin / ok / unknown liquidity tag. Not a verdict.">
+  <meta property="og:url" content="https://louist369.github.io/mint-sanity/">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="mint-sanity">
+  <meta name="twitter:description" content="Look up a Solana mint on DexScreener: pair stats and a thin / ok / unknown liquidity tag. Not a verdict.">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -39,10 +47,12 @@
       status.className = kind || '';
       status.textContent = text;
     }
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const mint = input.value.trim();
-      if (!BASE58.test(mint)) return showStatus('That does not look like a Solana mint (base58, 32–44 chars).', 'err');
+    function setMintQuery(mint) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('mint', mint);
+      history.replaceState(null, '', url.pathname + url.search + url.hash);
+    }
+    async function lookup(mint) {
       showStatus('Fetching DexScreener…', 'load');
       try {
         const res = await fetch('https://api.dexscreener.com/latest/dex/tokens/' + encodeURIComponent(mint));
@@ -51,23 +61,38 @@
         const all = data.pairs || [];
         const list = all.filter((p) => p.chainId === 'solana');
         const pairs = list.length ? list : all;
-        if (!pairs.length) return showStatus('No pairs on DexScreener for this mint. Tag: unknown.', 'empty');
-        pairs.sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0));
-        const p = pairs[0];
-        const token = p.baseToken?.address === mint ? p.baseToken : (p.quoteToken?.address === mint ? p.quoteToken : p.baseToken);
-        const liq = p.liquidity?.usd;
-        const t = tagFor(liq);
-        status.hidden = true;
-        card.hidden = false;
-        card.innerHTML = '<h2>' + esc(token?.name) + ' <small>' + esc(token?.symbol) + '</small></h2>' +
-          '<p><span class="tag ' + t + '">' + t + '</span> liquidity snapshot only — not advice.</p>' +
-          '<dl><dt>Liquidity USD</dt><dd>' + money(liq) + '</dd>' +
-          '<dt>24h volume</dt><dd>' + money(p.volume?.h24) + '</dd>' +
-          '<dt>Pair created</dt><dd>' + esc(when(p.pairCreatedAt)) + '</dd></dl>';
+        if (!pairs.length) {
+          showStatus('No pairs on DexScreener for this mint. Tag: unknown.', 'empty');
+        } else {
+          pairs.sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0));
+          const p = pairs[0];
+          const token = p.baseToken?.address === mint ? p.baseToken : (p.quoteToken?.address === mint ? p.quoteToken : p.baseToken);
+          const liq = p.liquidity?.usd;
+          const t = tagFor(liq);
+          status.hidden = true;
+          card.hidden = false;
+          card.innerHTML = '<h2>' + esc(token?.name) + ' <small>' + esc(token?.symbol) + '</small></h2>' +
+            '<p><span class="tag ' + t + '">' + t + '</span> liquidity snapshot only — not advice.</p>' +
+            '<dl><dt>Liquidity USD</dt><dd>' + money(liq) + '</dd>' +
+            '<dt>24h volume</dt><dd>' + money(p.volume?.h24) + '</dd>' +
+            '<dt>Pair created</dt><dd>' + esc(when(p.pairCreatedAt)) + '</dd></dl>';
+        }
       } catch {
         showStatus('Could not reach DexScreener. Try again in a moment.', 'err');
       }
+      setMintQuery(mint);
+    }
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const mint = input.value.trim();
+      if (!BASE58.test(mint)) return showStatus('That does not look like a Solana mint (base58, 32–44 chars).', 'err');
+      lookup(mint);
     });
+    const mintParam = new URLSearchParams(window.location.search).get('mint');
+    if (mintParam && BASE58.test(mintParam.trim())) {
+      input.value = mintParam.trim();
+      lookup(input.value);
+    }
   </script>
 </body>
 </html>
